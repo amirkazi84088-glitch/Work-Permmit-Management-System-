@@ -1,0 +1,128 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
+import { DashboardService } from '../../../core/services/dashboard.service';
+import { PermitService } from '../../../core/services/permit.service';
+import { DashboardStats, WorkPermit } from '../../../core/models';
+import { PermitStatusBadgeComponent } from '../../../shared/components/permit-status-badge/permit-status-badge.component';
+
+@Component({
+  selector: 'app-safety-officer-dashboard',
+  standalone: true,
+  imports: [CommonModule, RouterLink, PermitStatusBadgeComponent],
+  template: `
+    <div class="page-wrapper">
+      <div class="page-header">
+        <div class="page-title-section">
+          <h2>Safety Officer Dashboard</h2>
+          <p>Track inspections, live permits, and items waiting for safety review.</p>
+        </div>
+        <div class="page-actions">
+          <a routerLink="/safety-officer/active-permits" class="btn btn-secondary">Review Queue</a>
+          <a routerLink="/safety-officer/inspections" class="btn btn-primary">Log Inspection</a>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        @for (card of statCards(); track card.title) {
+          <div class="stat-card">
+            <div class="stat-icon" [style.background]="card.bg">{{ card.icon }}</div>
+            <div class="stat-content">
+              <div class="stat-value">{{ card.value }}</div>
+              <div class="stat-label">{{ card.title }}</div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+        <div class="card">
+          <div class="card-header"><h3>Pending Safety Review</h3></div>
+          <div class="card-body">
+            @if (pendingPermits().length === 0) {
+              <div class="empty-state compact-empty"><p>No permits are waiting for safety approval.</p></div>
+            } @else {
+              <div class="mini-list">
+                @for (permit of pendingPermits(); track permit.id) {
+                  <a class="mini-item" [routerLink]="['/safety-officer/permit', permit.id]">
+                    <div>
+                      <div class="title">{{ permit.permitNumber }}</div>
+                      <div class="subtitle">{{ permit.title }}</div>
+                      <div class="subtitle">Expiry: {{ (permit.expiryAt || permit.endDate) ? ((permit.expiryAt || permit.endDate) | date:'dd MMM yyyy, HH:mm') : 'Not set' }}</div>
+                    </div>
+                    <app-permit-status-badge type="status" [value]="permit.status"></app-permit-status-badge>
+                  </a>
+                }
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Active Field Permits</h3></div>
+          <div class="card-body">
+            @if (activePermits().length === 0) {
+              <div class="empty-state compact-empty"><p>No active permits are available right now.</p></div>
+            } @else {
+              <div class="mini-list">
+                @for (permit of activePermits(); track permit.id) {
+                  <a class="mini-item" [routerLink]="['/safety-officer/permit', permit.id]">
+                    <div>
+                      <div class="title">{{ permit.title }}</div>
+                      <div class="subtitle">{{ permit.requestedByName }}</div>
+                      <div class="subtitle">Expiry: {{ (permit.expiryAt || permit.endDate) ? ((permit.expiryAt || permit.endDate) | date:'dd MMM yyyy, HH:mm') : 'Not set' }}</div>
+                    </div>
+                    <app-permit-status-badge type="status" [value]="permit.status"></app-permit-status-badge>
+                  </a>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+  styles: [`
+    .mini-list { display:flex; flex-direction:column; gap:12px; }
+    .mini-item {
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:14px; border:1px solid var(--border); border-radius:14px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(236,253,245,0.95));
+      text-decoration:none;
+    }
+    .title { font-weight:600; color:var(--text-primary); }
+    .subtitle { font-size:0.75rem; color:var(--text-muted); }
+    .compact-empty { min-height:180px; }
+  `]
+})
+export class SafetyOfficerDashboardComponent implements OnInit {
+  private dashboardService = inject(DashboardService);
+  private permitService = inject(PermitService);
+
+  stats = signal<DashboardStats | null>(null);
+  pendingPermits = signal<WorkPermit[]>([]);
+  activePermits = signal<WorkPermit[]>([]);
+
+  ngOnInit(): void {
+    forkJoin({
+      stats: this.dashboardService.getStats(),
+      pending: this.permitService.getPendingApprovals({ page: 0, size: 5 }),
+      permits: this.permitService.getPermits({ page: 0, size: 200 })
+    }).subscribe({
+      next: ({ stats, pending, permits }) => {
+        this.stats.set(stats);
+        this.pendingPermits.set(pending.content.slice(0, 5));
+        this.activePermits.set(permits.content.filter(permit => permit.status === 'ACTIVE').slice(0, 5));
+      }
+    });
+  }
+
+  statCards() {
+    return (this.stats()?.cards ?? []).slice(0, 4).map((card, index) => ({
+      ...card,
+      bg: ['#cffafe', '#dcfce7', '#fef3c7', '#e0f2fe'][index % 4],
+      icon: ['Q', 'A', 'I', 'N'][index % 4]
+    }));
+  }
+}
