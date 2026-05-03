@@ -11,8 +11,10 @@ import com.wpms.entity.User;
 import com.wpms.entity.UserRole;
 import com.wpms.exception.ResourceNotFoundException;
 import com.wpms.repository.DepartmentRepository;
+import com.wpms.repository.DocumentRepository;
 import com.wpms.repository.OrganizationRepository;
 import com.wpms.repository.RoleRepository;
+import com.wpms.repository.NotificationRepository;
 import com.wpms.repository.UserRepository;
 import com.wpms.repository.UserRoleRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class UserService {
@@ -29,6 +32,8 @@ public class UserService {
     private final UserRoleRepository userRoleRepository;
     private final OrganizationRepository organizationRepository;
     private final DepartmentRepository departmentRepository;
+    private final DocumentRepository documentRepository;
+    private final NotificationRepository notificationRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
 
@@ -38,6 +43,8 @@ public class UserService {
             UserRoleRepository userRoleRepository,
             OrganizationRepository organizationRepository,
             DepartmentRepository departmentRepository,
+            DocumentRepository documentRepository,
+            NotificationRepository notificationRepository,
             PasswordEncoder passwordEncoder,
             AuditLogService auditLogService
     ) {
@@ -46,6 +53,8 @@ public class UserService {
         this.userRoleRepository = userRoleRepository;
         this.organizationRepository = organizationRepository;
         this.departmentRepository = departmentRepository;
+        this.documentRepository = documentRepository;
+        this.notificationRepository = notificationRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
     }
@@ -79,8 +88,15 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserResponseDTO> getAllUsers() {
-        return userRepository.findAll().stream()
+    public List<UserResponseDTO> getAllUsers(String requesterEmail) {
+        User requester = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + requesterEmail));
+
+        List<User> users = hasRole(requester, RoleType.SUPER_ADMIN)
+                ? userRepository.findAll()
+                : userRepository.findByIsActiveTrue();
+
+        return users.stream()
                 .map(this::mapToDto)
                 .toList();
     }
@@ -151,9 +167,12 @@ public class UserService {
     public void deleteUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-        String email = user.getEmail();
-        userRepository.delete(user);
-        auditLogService.log(email, "USER", "Deleted user", userId);
+        user.setIsActive(false);
+        user.setResetToken(null);
+        user.setResetTokenExpiry(null);
+        user.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
+        userRepository.save(user);
+        auditLogService.log(user.getEmail(), "USER", "Soft deleted user", userId);
     }
 
     @Transactional
@@ -245,5 +264,10 @@ public class UserService {
 
     private String blankToNull(String value) {
         return value == null || value.trim().isEmpty() ? null : value.trim();
+    }
+
+    private boolean hasRole(User user, RoleType roleType) {
+        return user.getUserRoles().stream()
+                .anyMatch(userRole -> userRole.getRole().getRoleName() == roleType);
     }
 }

@@ -20,6 +20,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<User> findAll();
 
     @EntityGraph(attributePaths = {"userRoles", "userRoles.role", "organization", "department"})
+    List<User> findByIsActiveTrue();
+
+    @EntityGraph(attributePaths = {"userRoles", "userRoles.role", "organization", "department"})
     Optional<User> findByResetToken(String resetToken);
 
     @EntityGraph(attributePaths = {"userRoles", "userRoles.role", "organization", "department"})

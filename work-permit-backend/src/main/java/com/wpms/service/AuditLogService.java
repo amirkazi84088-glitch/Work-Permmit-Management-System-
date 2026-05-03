@@ -38,6 +38,11 @@ public class AuditLogService {
         auditLogRepository.save(auditLog);
     }
 
+    @Transactional
+    public void deleteLogsForUser(Long userId) {
+        auditLogRepository.deleteByUserId(userId);
+    }
+
     @Transactional(readOnly = true)
     public List<AuditLogResponseDTO> getAuditLogs(LocalDate startDate, LocalDate endDate) {
         List<AuditLog> logs;

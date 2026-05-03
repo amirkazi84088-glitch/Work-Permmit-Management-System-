@@ -1,6 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -13,34 +13,34 @@ import { ToastService } from '../../core/services/toast.service';
     <div class="login-page">
       <div class="login-left">
         <div class="brand">
-          <div class="brand-icon">🏗️</div>
+          <div class="brand-icon">WP</div>
           <h1>WPMS</h1>
           <p>Work Permit Management System</p>
         </div>
         <div class="features">
           <div class="feature-item">
-            <span class="feature-icon">🛡️</span>
+            <span class="feature-icon">RB</span>
             <div>
               <strong>Role-Based Access</strong>
               <p>Worker, Supervisor, Safety Officer, Admin, Super Admin</p>
             </div>
           </div>
           <div class="feature-item">
-            <span class="feature-icon">📋</span>
+            <span class="feature-icon">WF</span>
             <div>
               <strong>Permit Workflow</strong>
               <p>Streamlined approval process with audit trail</p>
             </div>
           </div>
           <div class="feature-item">
-            <span class="feature-icon">🔔</span>
+            <span class="feature-icon">EM</span>
             <div>
               <strong>Email Notifications</strong>
               <p>Real-time alerts for every permit status change</p>
             </div>
           </div>
           <div class="feature-item">
-            <span class="feature-icon">🏢</span>
+            <span class="feature-icon">MO</span>
             <div>
               <strong>Multi-Organization</strong>
               <p>Manage permits across multiple organizations</p>
@@ -58,7 +58,7 @@ import { ToastService } from '../../core/services/toast.service';
 
           @if (errorMessage()) {
             <div class="alert alert-danger" style="margin-bottom: 20px;">
-              <span class="alert-icon">⚠️</span>
+              <span class="alert-icon">!</span>
               {{ errorMessage() }}
             </div>
           }
@@ -73,9 +73,12 @@ import { ToastService } from '../../core/services/toast.service';
                 [class.is-invalid]="isInvalid('email')"
                 placeholder="you@example.com"
                 autocomplete="email"
+                (input)="sanitizeEmail()"
+                (keydown.space)="$event.preventDefault()"
+                (paste)="handlePaste($event, 'email')"
               />
               @if (isInvalid('email')) {
-                <span class="form-error">⚠ Please enter a valid email address</span>
+                <span class="form-error">Please enter a valid email address without spaces</span>
               }
             </div>
 
@@ -89,6 +92,9 @@ import { ToastService } from '../../core/services/toast.service';
                   [class.is-invalid]="isInvalid('password')"
                   placeholder="Enter your password"
                   autocomplete="current-password"
+                  (input)="sanitizePassword()"
+                  (keydown.space)="$event.preventDefault()"
+                  (paste)="handlePaste($event, 'password')"
                 />
                 <button
                   type="button"
@@ -96,11 +102,11 @@ import { ToastService } from '../../core/services/toast.service';
                   (click)="showPassword.set(!showPassword())"
                   title="Toggle password visibility"
                 >
-                  {{ showPassword() ? '🙈' : '👁️' }}
+                  {{ showPassword() ? 'Hide' : 'Show' }}
                 </button>
               </div>
               @if (isInvalid('password')) {
-                <span class="form-error">⚠ Password is required</span>
+                <span class="form-error">Password is required, at least 6 characters, and cannot contain spaces</span>
               }
             </div>
 
@@ -153,7 +159,16 @@ import { ToastService } from '../../core/services/toast.service';
 
     .brand {
       margin-bottom: 60px;
-      .brand-icon { font-size: 48px; margin-bottom: 16px; }
+      .brand-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        background: rgba(255,255,255,0.12);
+        margin-bottom: 16px;
+        font-weight: 700;
+      }
       h1 { font-size: 2.5rem; font-weight: 800; color: white; margin-bottom: 8px; letter-spacing: -0.5px; }
       p { color: #94a3b8; font-size: 1.1rem; }
     }
@@ -164,7 +179,18 @@ import { ToastService } from '../../core/services/toast.service';
       display: flex;
       align-items: flex-start;
       gap: 16px;
-      .feature-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+      .feature-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: rgba(255,255,255,0.08);
+        font-size: 12px;
+        font-weight: 700;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
       strong { display: block; color: white; font-size: 0.95rem; margin-bottom: 4px; }
       p { color: #64748b; font-size: 0.85rem; margin: 0; }
     }
@@ -227,7 +253,7 @@ import { ToastService } from '../../core/services/toast.service';
 
     .password-wrapper {
       position: relative;
-      .form-control { padding-right: 44px; }
+      .form-control { padding-right: 60px; }
     }
 
     .password-toggle {
@@ -238,8 +264,9 @@ import { ToastService } from '../../core/services/toast.service';
       background: none;
       border: none;
       cursor: pointer;
-      font-size: 16px;
+      font-size: 12px;
       padding: 4px;
+      color: #475569;
     }
 
     .login-footer {
@@ -263,8 +290,8 @@ export class LoginComponent {
     private route: ActivatedRoute
   ) {
     this.loginForm = this.fb.group({
-      email: ['', [Validators.required, Validators.email]],
-      password: ['', [Validators.required, Validators.minLength(6)]],
+      email: ['', [Validators.required, Validators.email, this.noWhitespaceValidator()]],
+      password: ['', [Validators.required, Validators.minLength(6), this.noWhitespaceValidator()]],
       rememberMe: [false]
     });
   }
@@ -275,6 +302,9 @@ export class LoginComponent {
   }
 
   onSubmit(): void {
+    this.sanitizeEmail();
+    this.sanitizePassword();
+
     if (this.loginForm.invalid) {
       this.loginForm.markAllAsTouched();
       return;
@@ -298,5 +328,53 @@ export class LoginComponent {
         this.errorMessage.set(msg);
       }
     });
+  }
+
+  sanitizeEmail(): void {
+    const ctrl = this.loginForm.get('email');
+    const value = ctrl?.value;
+    if (typeof value !== 'string') {
+      return;
+    }
+
+    const sanitized = value.replace(/\s+/g, '').trim().toLowerCase();
+    if (sanitized !== value) {
+      ctrl?.setValue(sanitized, { emitEvent: false });
+    }
+  }
+
+  sanitizePassword(): void {
+    const ctrl = this.loginForm.get('password');
+    const value = ctrl?.value;
+    if (typeof value !== 'string') {
+      return;
+    }
+
+    const sanitized = value.replace(/\s+/g, '');
+    if (sanitized !== value) {
+      ctrl?.setValue(sanitized, { emitEvent: false });
+    }
+  }
+
+  handlePaste(event: ClipboardEvent, field: 'email' | 'password'): void {
+    event.preventDefault();
+    const raw = event.clipboardData?.getData('text') ?? '';
+    const sanitized = field === 'email'
+      ? raw.replace(/\s+/g, '').trim().toLowerCase()
+      : raw.replace(/\s+/g, '');
+
+    const ctrl = this.loginForm.get(field);
+    ctrl?.setValue(sanitized);
+    ctrl?.markAsDirty();
+    ctrl?.markAsTouched();
+  }
+
+  private noWhitespaceValidator(): ValidatorFn {
+    return (control: AbstractControl): ValidationErrors | null => {
+      const value = control.value;
+      return typeof value === 'string' && /\s/.test(value)
+        ? { whitespace: true }
+        : null;
+    };
   }
 }
